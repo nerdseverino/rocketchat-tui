@@ -214,6 +214,14 @@ func (m *Model) setChannelMembersList() tea.Cmd {
 	return channelMembersListSetCmnd
 }
 
+func (m *Model) ensureChannelMembersLoaded() {
+	if m.membersLoadedForRoom != m.activeChannel.RoomId {
+		m.channelMembers = nil
+		m.setChannelMembersList()
+		m.membersLoadedForRoom = m.activeChannel.RoomId
+	}
+}
+
 func (m *Model) handleShowingChannelMembersList() tea.Cmd {
 	val := m.textInput.Value()
 	chars := []rune(val)
@@ -228,10 +236,12 @@ func (m *Model) handleShowingChannelMembersList() tea.Cmd {
 		cmd := m.handleChannelMemberListFiltering(username)
 		return cmd
 	} else if cursorCurrentPos == 1 && string(chars[0]) == "@" { // When '@' is at first position of input string
+		m.ensureChannelMembersLoaded()
 		m.showChannelMembersList = true
 		m.positionOfAtSymbol = 1
 		return nil
 	} else if cursorCurrentPos >= 2 && string(chars[cursorCurrentPos-1]) == "@" && string(chars[cursorCurrentPos-2]) == " " { // When '@' is at position other than first just after space
+		m.ensureChannelMembersLoaded()
 		m.showChannelMembersList = true
 		m.positionOfAtSymbol = cursorCurrentPos
 		return nil

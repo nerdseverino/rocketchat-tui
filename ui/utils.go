@@ -2,12 +2,29 @@ package ui
 
 import (
 	"errors"
+	"log"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/RocketChat/Rocket.Chat.Go.SDK/models"
 )
+
+func retryWithBackoff(maxRetries int, fn func() error) error {
+	var err error
+	for i := 0; i < maxRetries; i++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		wait := time.Duration(1<<uint(i)) * time.Second
+		if wait > 30*time.Second {
+			wait = 30 * time.Second
+		}
+		log.Printf("retry %d/%d after %v: %v", i+1, maxRetries, wait, err)
+		time.Sleep(wait)
+	}
+	return err
+}
 
 // Return first letter of a string.
 func getStringFirstLetter(str string) string {

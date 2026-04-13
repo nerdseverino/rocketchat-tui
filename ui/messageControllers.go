@@ -26,7 +26,16 @@ func (m *Model) checkConnection() tea.Cmd {
 		log.Println("connection check failed:", err)
 		m.connectionAlive = false
 		m.rlClient.Reconnect()
-		log.Println("reconnected after health check failure")
+		// Re-subscribe ao canal ativo após reconnect
+		m.subscribed = make(map[string]string)
+		if m.activeChannel.RoomId != "" {
+			if subErr := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); subErr != nil {
+				log.Println("re-subscribe failed:", subErr)
+			} else {
+				m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
+			}
+		}
+		log.Println("reconnected and re-subscribed")
 		m.connectionAlive = true
 	}
 	return connectionCheckTick()
@@ -36,9 +45,10 @@ func (m *Model) checkConnection() tea.Cmd {
 func (m *Model) sendMessage(text string) {
 	if text != "" {
 		channelId := m.activeChannel.RoomId
-		if _, err := m.rlClient.SendMessage(&models.Message{RoomID: channelId, Msg: text}); err != nil {
-			log.Println(err)
-		}
+		retryWithBackoff(2, func() error {
+			_, err := m.rlClient.SendMessage(&models.Message{RoomID: channelId, Msg: text})
+			return err
+		})
 	}
 }
 
@@ -56,7 +66,12 @@ type pastMessagesMsg struct {
 func (m *Model) loadHistory() tea.Cmd {
 	channelId := m.activeChannel.RoomId
 	return func() tea.Msg {
-		messages, err := m.rlClient.LoadHistory(channelId)
+		var messages []models.Message
+		err := retryWithBackoff(3, func() error {
+			var e error
+			messages, e = m.rlClient.LoadHistory(channelId)
+			return e
+		})
 		if err != nil {
 			log.Println(err)
 			return historyLoadedMsg{}
@@ -88,7 +103,7 @@ func (m *Model) fetchPastMessages() tea.Cmd {
 		Fname: m.activeChannel.DisplayName,
 		Type:  m.activeChannel.Type,
 	}
-	page := &models.Pagination{Count: 20, Offset: 5, Total: 10}
+	page := &models.Pagination{Count: 50, Offset: len(m.messageHistory)}
 	restClient := m.restClient
 
 	return func() tea.Msg {

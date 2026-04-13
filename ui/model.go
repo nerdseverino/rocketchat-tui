@@ -48,6 +48,7 @@ type Model struct {
 	channelMembersList list.Model
 
 	channelMembers       []models.User
+	membersLoadedForRoom string
 	slashCommands        []models.SlashCommand
 	selectedSlashCommand *models.SlashCommand
 
@@ -172,7 +173,7 @@ func IntialModelState(sUrl string) *Model {
 		height:                 h,
 		subscribed:             make(map[string]string),
 		unreadCount:            unreadCount,
-		msgChannel:             make(chan models.Message, 100),
+		msgChannel:             make(chan models.Message, 500),
 		loadMorePastMessages:   false,
 		showSlashCommandList:   false,
 		selectedSlashCommand:   &models.SlashCommand{},

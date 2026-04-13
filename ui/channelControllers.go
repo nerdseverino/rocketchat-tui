@@ -2,6 +2,7 @@ package ui
 
 import (
 	"log"
+	"sort"
 
 	"github.com/RocketChat/Rocket.Chat.Go.SDK/models"
 	"github.com/charmbracelet/bubbles/list"
@@ -19,6 +20,7 @@ func (m *Model) changeSelectedChannel(index int) tea.Cmd {
 
 	m.messageHistory = []models.Message{}
 	m.unreadCount[m.activeChannel.RoomId] = 0
+	m.membersLoadedForRoom = ""
 
 	if _, ok := m.subscribed[m.activeChannel.RoomId]; !ok {
 		if err := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); err != nil {
@@ -28,7 +30,7 @@ func (m *Model) changeSelectedChannel(index int) tea.Cmd {
 		m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
 	}
 
-	return m.loadHistory()
+	return tea.Batch(m.loadHistory(), m.setSlashCommandsList())
 }
 
 // It is used to get list of all the channels in which user is subscribed.
@@ -44,6 +46,16 @@ func (m *Model) getSubscriptions() error {
 			m.subscriptionList = append(m.subscriptionList, sub)
 		}
 	}
+	// Canais com unread/alert primeiro, depois por nome
+	sort.Slice(m.subscriptionList, func(i, j int) bool {
+		if m.subscriptionList[i].Alert != m.subscriptionList[j].Alert {
+			return m.subscriptionList[i].Alert
+		}
+		if m.subscriptionList[i].Unread != m.subscriptionList[j].Unread {
+			return m.subscriptionList[i].Unread > m.subscriptionList[j].Unread
+		}
+		return m.subscriptionList[i].Name < m.subscriptionList[j].Name
+	})
 	return nil
 }
 

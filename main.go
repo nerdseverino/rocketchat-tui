@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/RocketChat/rocketchat-tui/cache"
 	"github.com/RocketChat/rocketchat-tui/ui"
@@ -45,6 +46,9 @@ func createModel() (*ui.Model, *os.File) {
 	}
 	if prod {
 		sUrl = os.Getenv("PROD_SERVER_URL")
+		if !strings.HasPrefix(sUrl, "https://") {
+			fmt.Println("⚠ WARNING: Production server URL is not HTTPS. Credentials will be sent in plaintext.")
+		}
 	} else if url != "" {
 		sUrl = url
 	} else {

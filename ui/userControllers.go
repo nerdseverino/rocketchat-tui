@@ -51,6 +51,11 @@ func (m *Model) connectFromEmailAndPassword() error {
 	cache.CreateUpdateCacheEntry("token", user.Token)
 	cache.CreateUpdateCacheEntry("tokenExpires", strconv.Itoa(int(user.TokenExpires)))
 
+	m.password = ""
+	m.email = ""
+	m.loginScreen.passwordInput.Reset()
+	m.loginScreen.emailInput.Reset()
+
 	m.loginScreen.loggedIn = true
 	m.loginScreen.loginScreenState = "showTui"
 
@@ -137,9 +142,8 @@ func (m *Model) userLoginBegin() tea.Cmd {
 		m.typing = true
 		historyCmd := m.changeSelectedChannel(0)
 		setSlashCommandsList := m.setSlashCommandsList()
-		channelMembersSetCmnd := m.setChannelMembersList()
 		m.connectionAlive = true
-		return tea.Batch(channelCmd, historyCmd, setSlashCommandsList, channelMembersSetCmnd, connectionCheckTick())
+		return tea.Batch(channelCmd, historyCmd, setSlashCommandsList, connectionCheckTick())
 
 	} else {
 		cache.CreateUpdateCacheEntry("token", "")
@@ -184,8 +188,7 @@ func (m *Model) handleLoginScreenUpdate(msg tea.Msg) (tea.Cmd, error) {
 					m.typing = true
 					m.connectionAlive = true
 					setSlashCommandsList := m.setSlashCommandsList()
-					channelMembersSetCmnd := m.setChannelMembersList()
-					cmds = append(cmds, channelCmd, textinput.Blink, setSlashCommandsList, channelMembersSetCmnd, cmd, historyCmd, connectionCheckTick())
+					cmds = append(cmds, channelCmd, textinput.Blink, setSlashCommandsList, cmd, historyCmd, connectionCheckTick())
 					return tea.Batch(cmds...), nil
 				}
 				err := generateError("Please enter email and password")
@@ -213,6 +216,12 @@ func (m *Model) handleLoginScreenUpdate(msg tea.Msg) (tea.Cmd, error) {
 // Handle user logout and restoration of the TUI state to the intial state once user is logged out
 // Clear user token and its expiration date from cache
 func (m *Model) handleUserLogOut() (tea.Model, tea.Cmd) {
+	if m.restClient != nil {
+		m.restClient.Logout()
+	}
+	if m.rlClient != nil {
+		m.rlClient.Close()
+	}
 	sUrl := m.serverUrl
 	m.loginScreen.passwordInput.Reset()
 	m.loginScreen.emailInput.Reset()

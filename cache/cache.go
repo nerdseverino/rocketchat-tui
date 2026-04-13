@@ -24,6 +24,13 @@ func CacheInit() error {
 	})
 }
 
+// To close the cache db.
+func CacheClose() {
+	if cache != nil {
+		cache.Close()
+	}
+}
+
 // To create and update entry in the cache.
 func CreateUpdateCacheEntry(name string, value string) error {
 	err := cache.Update(func(tx *bolt.Tx) error {

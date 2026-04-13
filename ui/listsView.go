@@ -56,7 +56,9 @@ type ChannelsItem models.ChannelSubscription
 
 func (i ChannelsItem) FilterValue() string { return i.Name }
 
-type ChannelListDelegate struct{}
+type ChannelListDelegate struct {
+	UnreadCount *map[string]int
+}
 
 func (d ChannelListDelegate) Height() int  { return 1 }
 func (d ChannelListDelegate) Spacing() int { return 1 }
@@ -76,7 +78,13 @@ func (d ChannelListDelegate) Render(w io.Writer, m list.Model, index int, channe
 			nameLetter = styles.SidebarTopColumnStyle.Align(lipgloss.Left).Bold(true).Render(styles.NameLetterBoxStyle.Background(lipgloss.Color("#d1495b")).Bold(true).Render(getStringFirstLetter(i.Name)))
 			channelName = styles.ChannelNameStyle.Copy().Bold(true).Underline(true).Render("# " + string(i.Name))
 		}
-		str := styles.ChannelWindowTitleStyle.Copy().PaddingBottom(1).Render(lipgloss.JoinHorizontal(lipgloss.Top, nameLetter, channelName))
+		unreadBadge := ""
+		if d.UnreadCount != nil {
+			if count, ok := (*d.UnreadCount)[i.RoomId]; ok && count > 0 {
+				unreadBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("#ff5757")).Bold(true).Render(fmt.Sprintf(" (%d)", count))
+			}
+		}
+		str := styles.ChannelWindowTitleStyle.Copy().PaddingBottom(1).Render(lipgloss.JoinHorizontal(lipgloss.Top, nameLetter, channelName, unreadBadge))
 
 		fmt.Fprint(w, str)
 	}
@@ -123,6 +131,9 @@ func (c ChannelMembersListDelegate) Update(msg tea.Msg, m *list.Model) tea.Cmd {
 }
 func (c ChannelMembersListDelegate) Render(w io.Writer, m list.Model, index int, channelMembersListItem list.Item) {
 	i, ok := channelMembersListItem.(ChannelMembersItem)
+	if !ok {
+		return
+	}
 	var activeStatus string
 	if i.Status == "online" {
 		activeStatus = "●"
@@ -130,9 +141,6 @@ func (c ChannelMembersListDelegate) Render(w io.Writer, m list.Model, index int,
 		activeStatus = "○"
 	} else {
 		activeStatus = "◦"
-	}
-	if !ok {
-		return
 	}
 	if i.UserName != "" {
 		var nameLetterChat string

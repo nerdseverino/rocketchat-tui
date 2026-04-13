@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/RocketChat/rocketchat-tui/cache"
 	"github.com/RocketChat/rocketchat-tui/ui"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/joho/godotenv"
@@ -80,9 +81,14 @@ func main() {
 	flag.Parse()
 
 	model, logger := createModel()
+	if model == nil {
+		log.Fatal("Failed to initialize terminal")
+	}
 	if logger != nil {
 		defer logger.Close()
 	}
+	defer cache.CacheClose()
+	defer model.Cleanup()
 
 	tui := tea.NewProgram(
 		model,
@@ -90,6 +96,5 @@ func main() {
 	)
 	if err := tui.Start(); err != nil {
 		log.Fatal(err)
-		os.Exit(1)
 	}
 }

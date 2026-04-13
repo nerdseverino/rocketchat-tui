@@ -32,6 +32,7 @@ type Model struct {
 	subscriptionList     []models.ChannelSubscription
 	msgChannel           chan models.Message
 	subscribed           map[string]string
+	unreadCount          map[string]int
 	messageHistory       []models.Message
 	activeChannel        models.ChannelSubscription
 	lastMessageTimestamp *time.Time
@@ -56,6 +57,7 @@ type Model struct {
 	loadMorePastMessages   bool
 	showSlashCommandList   bool
 	showChannelMembersList bool
+	connectionAlive        bool
 
 	positionOfAtSymbol int
 	width              int
@@ -115,7 +117,8 @@ func IntialModelState(sUrl string) *Model {
 	items := []list.Item{}
 	listKeys := keyBindings.NewListKeyMap()
 
-	channelListDelegate := ChannelListDelegate{}
+	unreadCount := make(map[string]int)
+	channelListDelegate := ChannelListDelegate{UnreadCount: &unreadCount}
 	msgListDelegate := MessageListDelegate{}
 	slashCmndsListDelegate := SlashCommandsListDelegate{}
 	channelMembersListDelegate := ChannelMembersListDelegate{}
@@ -168,6 +171,7 @@ func IntialModelState(sUrl string) *Model {
 		width:                  w,
 		height:                 h,
 		subscribed:             make(map[string]string),
+		unreadCount:            unreadCount,
 		msgChannel:             make(chan models.Message, 100),
 		loadMorePastMessages:   false,
 		showSlashCommandList:   false,
@@ -207,11 +211,48 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case models.Message:
-		msgItem := MessagessItem(msg)
-		cmd := m.messagesList.InsertItem(len(m.messagesList.Items()), msgItem)
+		if msg.RoomID == m.activeChannel.RoomId {
+			m.messageHistory = append(m.messageHistory, msg)
+			msgItem := MessagessItem(msg)
+			cmd := m.messagesList.InsertItem(len(m.messagesList.Items()), msgItem)
+			m.messagesList.Paginator.NextPage()
+			m.loadMorePastMessages = false
+			return m, tea.Batch(m.waitForIncomingMessage(m.msgChannel), cmd)
+		}
+		m.unreadCount[msg.RoomID]++
+		return m, m.waitForIncomingMessage(m.msgChannel)
+
+	case historyLoadedMsg:
+		if len(msg.messages) == 0 {
+			return m, nil
+		}
+		m.lastMessageTimestamp = msg.timestamp
+		var items []list.Item
+		for _, message := range msg.messages {
+			m.messageHistory = append(m.messageHistory, message)
+			items = append(items, MessagessItem(message))
+		}
+		cmd := m.messagesList.SetItems(items)
 		m.messagesList.Paginator.NextPage()
-		m.loadMorePastMessages = false
-		return m, tea.Batch(m.waitForIncomingMessage(m.msgChannel), cmd)
+		return m, cmd
+
+	case pastMessagesMsg:
+		if len(msg.messages) == 0 {
+			return m, nil
+		}
+		m.lastMessageTimestamp = msg.timestamp
+		var updatedList []models.Message
+		updatedList = append(updatedList, msg.messages...)
+		updatedList = append(updatedList, m.messageHistory...)
+		m.messageHistory = updatedList
+		var items []list.Item
+		for _, message := range updatedList {
+			items = append(items, MessagessItem(message))
+		}
+		return m, m.messagesList.SetItems(items)
+
+	case connectionCheckMsg:
+		return m, m.checkConnection()
 
 	case tea.KeyMsg:
 		m, cmd := m.handleUpdateOnKeyPress(msg)
@@ -231,6 +272,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	cmds = append(cmds, channelCmd, messageCmd, slashCmd, channelMembersListCmnd)
 	return m, tea.Batch(cmds...)
+}
+
+func (m *Model) Cleanup() {
+	if m.rlClient != nil {
+		m.rlClient.Close()
+	}
 }
 
 // This renders the UI of the TUI.

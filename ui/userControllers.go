@@ -54,7 +54,9 @@ func (m *Model) connectFromEmailAndPassword() error {
 	m.loginScreen.loggedIn = true
 	m.loginScreen.loginScreenState = "showTui"
 
-	m.getSubscriptions()
+	if err := m.getSubscriptions(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -93,7 +95,9 @@ func (m *Model) connectFromToken() error {
 	m.loginScreen.loggedIn = true
 	m.loginScreen.loginScreenState = "showTui"
 
-	m.getSubscriptions()
+	if err := m.getSubscriptions(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -131,10 +135,11 @@ func (m *Model) userLoginBegin() tea.Cmd {
 		}
 		channelCmd := m.setChannelsInUiList()
 		m.typing = true
-		m.changeSelectedChannel(0)
+		historyCmd := m.changeSelectedChannel(0)
 		setSlashCommandsList := m.setSlashCommandsList()
 		channelMembersSetCmnd := m.setChannelMembersList()
-		return tea.Batch(channelCmd, setSlashCommandsList, channelMembersSetCmnd)
+		m.connectionAlive = true
+		return tea.Batch(channelCmd, historyCmd, setSlashCommandsList, channelMembersSetCmnd, connectionCheckTick())
 
 	} else {
 		cache.CreateUpdateCacheEntry("token", "")
@@ -175,11 +180,12 @@ func (m *Model) handleLoginScreenUpdate(msg tea.Msg) (tea.Cmd, error) {
 					channelCmd := m.setChannelsInUiList()
 					cmd := m.waitForIncomingMessage(m.msgChannel)
 					m.loginScreen.loggedIn = true
-					m.changeSelectedChannel(0)
+					historyCmd := m.changeSelectedChannel(0)
 					m.typing = true
+					m.connectionAlive = true
 					setSlashCommandsList := m.setSlashCommandsList()
 					channelMembersSetCmnd := m.setChannelMembersList()
-					cmds = append(cmds, channelCmd, textinput.Blink, setSlashCommandsList, channelMembersSetCmnd, cmd)
+					cmds = append(cmds, channelCmd, textinput.Blink, setSlashCommandsList, channelMembersSetCmnd, cmd, historyCmd, connectionCheckTick())
 					return tea.Batch(cmds...), nil
 				}
 				err := generateError("Please enter email and password")

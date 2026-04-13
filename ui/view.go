@@ -94,7 +94,11 @@ func (m *Model) RenderTui() string {
 		styles.ChannelWindowStyle.Height(m.height-2).Width(3*(m.width/4)).Render(lipgloss.JoinVertical(lipgloss.Top, channelWindowTopbar, channelConversationScreen, smallListBox, channelMessageInputBox)),
 	)
 
-	instruction := styles.InstructionStyle.Width(m.width).Render("Press Ctrl + C - quit • Ctrl + H - help • Ctrl + Arrows - for navigation in pane • Enter - send message • Ctrl + L - Log out")
+	connStatus := "● Connected"
+	if !m.connectionAlive {
+		connStatus = "○ Reconnecting..."
+	}
+	instruction := styles.InstructionStyle.Width(m.width).Render("Ctrl+C quit • Ctrl+Arrows navigate • Enter send • Ctrl+L logout • " + connStatus)
 	ui := lipgloss.JoinHorizontal(lipgloss.Center, sidebar, channelWindow)
 	completeUi := lipgloss.JoinVertical(lipgloss.Center, instruction, ui)
 	return completeUi

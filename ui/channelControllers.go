@@ -11,10 +11,14 @@ import (
 // It is used to change channel in the TUI, uses index of active channel in the channel list to set active channel in state.
 // Active channel is subscribed to the realtime message channel to receive messages through message channel.
 // Past message history of the active channel is loaded.
-func (m *Model) changeSelectedChannel(index int) {
+func (m *Model) changeSelectedChannel(index int) tea.Cmd {
+	if index < 0 || index >= len(m.subscriptionList) {
+		return nil
+	}
 	m.activeChannel = m.subscriptionList[index]
 
 	m.messageHistory = []models.Message{}
+	m.unreadCount[m.activeChannel.RoomId] = 0
 
 	if _, ok := m.subscribed[m.activeChannel.RoomId]; !ok {
 		if err := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); err != nil {
@@ -24,15 +28,15 @@ func (m *Model) changeSelectedChannel(index int) {
 		m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
 	}
 
-	m.loadHistory()
+	return m.loadHistory()
 }
 
 // It is used to get list of all the channels in which user is subscribed.
 // All the subscribed channels, groups and DMs are stored in state in subscriptions list.
-func (m *Model) getSubscriptions() {
+func (m *Model) getSubscriptions() error {
 	subscriptions, err := m.rlClient.GetChannelSubscriptions()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	for _, sub := range subscriptions {
@@ -40,6 +44,7 @@ func (m *Model) getSubscriptions() {
 			m.subscriptionList = append(m.subscriptionList, sub)
 		}
 	}
+	return nil
 }
 
 // It is used to set channels in the TUI channel list.
@@ -53,6 +58,8 @@ func (m *Model) setChannelsInUiList() tea.Cmd {
 		}
 	}
 	channelCmd := m.channelList.SetItems(items)
-	m.activeChannel = m.subscriptionList[0]
+	if len(m.subscriptionList) > 0 {
+		m.activeChannel = m.subscriptionList[0]
+	}
 	return channelCmd
 }

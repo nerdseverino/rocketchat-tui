@@ -155,7 +155,7 @@ func (m *Model) handleMessageAndSlashCommandInput() (tea.Model, tea.Cmd) {
 			params := strings.Join(typedCmnd[1:], " ")
 			err := m.executeSlashCommand(m.selectedSlashCommand.Command, params)
 			if err != nil {
-				panic(err)
+				log.Println("slash command error:", err)
 			}
 			m.textInput.Reset()
 			m.selectedSlashCommand = &models.SlashCommand{}
@@ -344,9 +344,9 @@ func (m *Model) handleUpdateOnKeyPress(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.typing = true
 			var msgItems []list.Item
 			cmd := m.messagesList.SetItems(msgItems)
-			m.changeSelectedChannel(m.channelList.Index())
+			historyCmd := m.changeSelectedChannel(m.channelList.Index())
 			m.loadMorePastMessages = false
-			return m, cmd
+			return m, tea.Batch(cmd, historyCmd)
 		}
 
 		if m.typing {

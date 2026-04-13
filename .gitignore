@@ -4,3 +4,8 @@ data.json
 cache.db
 debug.log
 /Rocket.Chat.Go.SDK
+backups/
+.kiro/
+.amazonq/
+contexto.json
+contexto*.json

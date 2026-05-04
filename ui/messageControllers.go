@@ -10,11 +10,48 @@ import (
 )
 
 type connectionCheckMsg struct{}
+type reconnectedMsg struct{}
 
 func connectionCheckTick() tea.Cmd {
 	return tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
 		return connectionCheckMsg{}
 	})
+}
+
+// Registra listener de status no DDP para detectar reconexões automáticas da lib.
+// Quando o DDP reconecta sozinho (nil event / broken websocket), envia reconnectedMsg
+// pelo canal do Bubbletea para re-subscrever.
+func (m *Model) setupStatusListener(reconnectCh chan struct{}) {
+	m.rlClient.AddStatusListener(func(status int) {
+		// status 3 = CONNECTED (após reconexão automática do DDP)
+		if status == 3 {
+			select {
+			case reconnectCh <- struct{}{}:
+			default:
+			}
+		}
+	})
+}
+
+func waitForReconnect(reconnectCh chan struct{}) tea.Cmd {
+	return func() tea.Msg {
+		<-reconnectCh
+		return reconnectedMsg{}
+	}
+}
+
+func (m *Model) handleReconnect() tea.Cmd {
+	log.Println("DDP reconnected, re-subscribing to active channel")
+	m.subscribed = make(map[string]string)
+	if m.activeChannel.RoomId != "" {
+		if err := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); err != nil {
+			log.Println("re-subscribe failed:", err)
+		} else {
+			m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
+		}
+	}
+	m.connectionAlive = true
+	return waitForReconnect(m.reconnectCh)
 }
 
 func (m *Model) checkConnection() tea.Cmd {

@@ -60,6 +60,8 @@ type Model struct {
 	showChannelMembersList bool
 	connectionAlive        bool
 
+	reconnectCh chan struct{}
+
 	positionOfAtSymbol int
 	width              int
 	height             int
@@ -181,6 +183,7 @@ func IntialModelState(sUrl string) *Model {
 		showChannelMembersList: false,
 		positionOfAtSymbol:     -1,
 		serverUrl:              sUrl,
+		reconnectCh:            make(chan struct{}, 1),
 	}
 	return initialModel
 }
@@ -254,6 +257,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case connectionCheckMsg:
 		return m, m.checkConnection()
+
+	case reconnectedMsg:
+		return m, m.handleReconnect()
 
 	case tea.KeyMsg:
 		m, cmd := m.handleUpdateOnKeyPress(msg)

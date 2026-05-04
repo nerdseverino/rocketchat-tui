@@ -143,7 +143,8 @@ func (m *Model) userLoginBegin() tea.Cmd {
 		historyCmd := m.changeSelectedChannel(0)
 		setSlashCommandsList := m.setSlashCommandsList()
 		m.connectionAlive = true
-		return tea.Batch(channelCmd, historyCmd, setSlashCommandsList, connectionCheckTick())
+		m.setupStatusListener(m.reconnectCh)
+		return tea.Batch(channelCmd, historyCmd, setSlashCommandsList, connectionCheckTick(), waitForReconnect(m.reconnectCh))
 
 	} else {
 		cache.CreateUpdateCacheEntry("token", "")
@@ -187,8 +188,9 @@ func (m *Model) handleLoginScreenUpdate(msg tea.Msg) (tea.Cmd, error) {
 					historyCmd := m.changeSelectedChannel(0)
 					m.typing = true
 					m.connectionAlive = true
+					m.setupStatusListener(m.reconnectCh)
 					setSlashCommandsList := m.setSlashCommandsList()
-					cmds = append(cmds, channelCmd, textinput.Blink, setSlashCommandsList, cmd, historyCmd, connectionCheckTick())
+					cmds = append(cmds, channelCmd, textinput.Blink, setSlashCommandsList, cmd, historyCmd, connectionCheckTick(), waitForReconnect(m.reconnectCh))
 					return tea.Batch(cmds...), nil
 				}
 				err := generateError("Please enter email and password")

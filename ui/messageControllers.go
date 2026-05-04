@@ -2,10 +2,12 @@ package ui
 
 import (
 	"log"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/RocketChat/Rocket.Chat.Go.SDK/models"
+	"github.com/RocketChat/Rocket.Chat.Go.SDK/realtime"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
@@ -13,17 +15,13 @@ type connectionCheckMsg struct{}
 type reconnectedMsg struct{}
 
 func connectionCheckTick() tea.Cmd {
-	return tea.Tick(30*time.Second, func(t time.Time) tea.Msg {
+	return tea.Tick(15*time.Second, func(t time.Time) tea.Msg {
 		return connectionCheckMsg{}
 	})
 }
 
-// Registra listener de status no DDP para detectar reconexões automáticas da lib.
-// Quando o DDP reconecta sozinho (nil event / broken websocket), envia reconnectedMsg
-// pelo canal do Bubbletea para re-subscrever.
 func (m *Model) setupStatusListener(reconnectCh chan struct{}) {
 	m.rlClient.AddStatusListener(func(status int) {
-		// status 3 = CONNECTED (após reconexão automática do DDP)
 		if status == 3 {
 			select {
 			case reconnectCh <- struct{}{}:
@@ -41,41 +39,81 @@ func waitForReconnect(reconnectCh chan struct{}) tea.Cmd {
 }
 
 func (m *Model) handleReconnect() tea.Cmd {
-	log.Println("DDP reconnected, re-subscribing to active channel")
-	m.subscribed = make(map[string]string)
-	if m.activeChannel.RoomId != "" {
-		if err := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); err != nil {
-			log.Println("re-subscribe failed:", err)
-		} else {
-			m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
-		}
-	}
-	m.connectionAlive = true
-	return waitForReconnect(m.reconnectCh)
+	log.Println("reconnect detected, performing full reconnect")
+	return m.fullReconnect()
 }
 
 func (m *Model) checkConnection() tea.Cmd {
 	if m.rlClient == nil {
 		return connectionCheckTick()
 	}
-	err := m.rlClient.ConnectionOnline()
-	if err != nil {
-		log.Println("connection check failed:", err)
-		m.connectionAlive = false
-		m.rlClient.Reconnect()
-		// Re-subscribe ao canal ativo após reconnect
-		m.subscribed = make(map[string]string)
-		if m.activeChannel.RoomId != "" {
-			if subErr := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); subErr != nil {
-				log.Println("re-subscribe failed:", subErr)
-			} else {
-				m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
-			}
+
+	// Usar goroutine com timeout para detectar conexão morta
+	done := make(chan error, 1)
+	go func() {
+		done <- m.rlClient.ConnectionOnline()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			log.Println("connection check failed:", err)
+			m.connectionAlive = false
+			return tea.Batch(m.fullReconnect(), connectionCheckTick())
 		}
-		log.Println("reconnected and re-subscribed")
-		m.connectionAlive = true
+	case <-time.After(5 * time.Second):
+		log.Println("connection check timeout, forcing full reconnect")
+		m.connectionAlive = false
+		return tea.Batch(m.fullReconnect(), connectionCheckTick())
 	}
+
 	return connectionCheckTick()
+}
+
+// fullReconnect cria um novo client DDP, re-loga com token e re-subscreve
+func (m *Model) fullReconnect() tea.Cmd {
+	serverUrl, err := url.Parse(m.serverUrl)
+	if err != nil {
+		log.Println("fullReconnect: bad URL:", err)
+		return nil
+	}
+
+	// Fechar conexão antiga
+	if m.rlClient != nil {
+		m.rlClient.Close()
+	}
+
+	// Novo client
+	c, err := realtime.NewClient(serverUrl, false)
+	if err != nil {
+		log.Println("fullReconnect: connect failed:", err)
+		return connectionCheckTick()
+	}
+
+	// Re-login com token
+	_, err = c.Login(&models.UserCredentials{Token: m.token})
+	if err != nil {
+		log.Println("fullReconnect: login failed:", err)
+		c.Close()
+		return connectionCheckTick()
+	}
+
+	m.rlClient = c
+	m.subscribed = make(map[string]string)
+
+	// Re-subscribe ao canal ativo
+	if m.activeChannel.RoomId != "" {
+		if err := m.rlClient.SubscribeToMessageStream(&models.Channel{ID: m.activeChannel.RoomId}, m.msgChannel); err != nil {
+			log.Println("fullReconnect: subscribe failed:", err)
+		} else {
+			m.subscribed[m.activeChannel.RoomId] = m.activeChannel.RoomId
+		}
+	}
+
+	m.connectionAlive = true
+	m.setupStatusListener(m.reconnectCh)
+	log.Println("fullReconnect: success")
+	return waitForReconnect(m.reconnectCh)
 }
 
 // It calls the Realtime API function used to send message in the TUI.
